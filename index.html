@@ -12,6 +12,8 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap"
         rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -281,8 +283,10 @@
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="donorLastDate">Last Donation Date</label>
-                            <input type="date" id="donorLastDate" />
+                            <label for="donorUnits">Units Donating Today *</label>
+                            <input type="number" id="donorUnits" placeholder="e.g. 1" min="1" max="5" value="1"
+                                required />
+                            <span class="field-error" id="donorUnitsError"></span>
                         </div>
                         <div class="form-group form-check-group">
                             <label class="checkbox-label">
@@ -438,8 +442,16 @@
                 <button class="filter-btn" data-filter="O+">O+</button>
                 <button class="filter-btn" data-filter="O-">O−</button>
             </div>
+            <div class="view-toggle-container reveal" style="text-align: center; margin-bottom: 24px;">
+                <button class="view-toggle-btn active" data-view="list">List View</button>
+                <button class="view-toggle-btn" data-view="map">Map View</button>
+            </div>
             <div class="donor-list" id="donorList">
                 <!-- Rendered by JS -->
+            </div>
+            <div id="donorMapWrapper"
+                style="display: none; width: 100%; height: 500px; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                <div id="donorMap" style="width: 100%; height: 100%; z-index: 1;"></div>
             </div>
         </div>
     </section>
@@ -566,11 +578,10 @@
                                 <tr>
                                     <th>#</th>
                                     <th>Name</th>
-                                    <th>Age</th>
                                     <th>Blood</th>
                                     <th>Phone</th>
                                     <th>City</th>
-                                    <th>Action</th>
+                                    <th>Total Donated</th>
                                 </tr>
                             </thead>
                             <tbody id="adminDonorsTbody"></tbody>
@@ -583,11 +594,11 @@
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Patient</th>
+                                    <th>Requester</th>
                                     <th>Blood</th>
                                     <th>Units</th>
                                     <th>Urgency</th>
-                                    <th>Hospital</th>
+                                    <th>Location</th>
                                     <th>Status</th>
                                     <th>Action</th>
                                 </tr>
@@ -599,6 +610,25 @@
                 <div class="tab-panel" id="tabInventory" style="display:none">
                     <div class="inventory-editor" id="inventoryEditor">
                         <!-- Rendered by JS -->
+                    </div>
+
+                    <div style="margin-top: 2.5rem;">
+                        <h4 style="margin-bottom: 1rem; color: var(--text);">Detailed Blood Stock</h4>
+                        <div class="table-wrapper">
+                            <table id="adminStockTable">
+                                <thead>
+                                    <tr>
+                                        <th>Unit #</th>
+                                        <th>Blood Group</th>
+                                        <th>Donation Date</th>
+                                        <th>Expiry Date</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminStockTbody"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -768,6 +798,8 @@
         </svg>
     </button>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="script.js"></script>
 </body>
 
