@@ -7,13 +7,18 @@
     "start": "node backend/server.js",
     "dev": "node backend/server.js"
   },
-  "keywords": ["blood-bank", "nodejs", "express", "postgresql"],
+  "keywords": [
+    "blood-bank",
+    "nodejs",
+    "express",
+    "mysql"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
-    "pg": "^8.11.3"
+    "mysql2": "^3.9.7"
   }
 }

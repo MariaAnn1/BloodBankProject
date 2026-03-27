@@ -1,5 +1,5 @@
 /* ═══════════════════════════════
-   DONOR MODEL
+   DONOR MODEL — MySQL Edition
    ═══════════════════════════════ */
 'use strict';
 
@@ -9,11 +9,12 @@ const DonorModel = {
     async createDonor({ user_id, blood_group, location, total_units_donated = 0 }) {
         const { rows } = await query(
             `INSERT INTO donors (user_id, blood_group, location, total_units_donated)
-             VALUES ($1, $2, $3, $4)
-             RETURNING *`,
+             VALUES (?, ?, ?, ?)`,
             [user_id, blood_group, location, total_units_donated]
         );
-        return rows[0];
+        // MySQL doesn't have RETURNING — fetch the inserted row using insertId
+        const inserted = await query('SELECT * FROM donors WHERE donor_id = ?', [rows[0]?.insertId ?? rows.insertId]);
+        return inserted.rows[0];
     },
 
     async getAllDonors() {
@@ -28,18 +29,12 @@ const DonorModel = {
 
     async findByUserId(user_id) {
         const { rows } = await query(
-            'SELECT * FROM donors WHERE user_id = $1',
+            'SELECT * FROM donors WHERE user_id = ?',
             [user_id]
         );
         return rows[0] || null;
     },
 
-    /**
-     * Atomically add donated units to donor record AND blood bank inventory.
-     * @param {number} donor_id
-     * @param {string} blood_group
-     * @param {number} units
-     */
     async recordDonation(donor_id, blood_group, units) {
         const client = await getClient();
         try {
@@ -48,25 +43,25 @@ const DonorModel = {
             // Increment donor's total
             await client.query(
                 `UPDATE donors
-                 SET total_units_donated = total_units_donated + $1
-                 WHERE donor_id = $2`,
+                 SET total_units_donated = total_units_donated + ?
+                 WHERE donor_id = ?`,
                 [units, donor_id]
             );
 
-            // Insert into detailed blood_stock
+            // Insert into detailed blood_stock with 35-day expiry
             for (let i = 0; i < units; i++) {
                 await client.query(
                     `INSERT INTO blood_stock (blood_group, donor_id, expiry_date)
-                     VALUES ($1, $2, CURRENT_DATE + INTERVAL '35 days')`,
+                     VALUES (?, ?, DATE_ADD(CURDATE(), INTERVAL 35 DAY))`,
                     [blood_group, donor_id]
                 );
             }
 
-            // Increment blood bank stock
+            // Increment blood bank inventory
             await client.query(
                 `UPDATE blood_banks
-                 SET available_units = available_units + $1
-                 WHERE blood_group = $2`,
+                 SET available_units = available_units + ?
+                 WHERE blood_group = ?`,
                 [units, blood_group]
             );
 

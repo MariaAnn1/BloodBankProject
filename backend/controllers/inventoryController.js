@@ -1,19 +1,14 @@
 /* ═══════════════════════════════
-   INVENTORY CONTROLLER
-   GET /api/inventory
+   INVENTORY CONTROLLER — MySQL Edition
    ═══════════════════════════════ */
 'use strict';
 
 const BloodBankModel = require('../models/bloodBankModel');
+const { query } = require('../db');
 
-/**
- * GET /api/inventory
- * Returns current blood unit counts per blood group.
- */
 async function getInventory(req, res) {
     try {
         const rows = await BloodBankModel.getInventory();
-        // Build a clean object: { 'A+': 45, 'B-': 12, ... }
         const inventory = {};
         rows.forEach(row => {
             inventory[row.blood_group] = parseInt(row.available_units, 10);
@@ -25,10 +20,6 @@ async function getInventory(req, res) {
     }
 }
 
-/**
- * GET /api/inventory/stock
- * Returns detailed list of all blood units with their donation/expiry dates.
- */
 async function getDetailedStock(req, res) {
     try {
         const rows = await BloodBankModel.getBloodStock();
@@ -39,10 +30,6 @@ async function getDetailedStock(req, res) {
     }
 }
 
-/**
- * DELETE /api/inventory/stock/:id
- * Marks a blood unit as expired (or removes it from active inventory)
- */
 async function removeExpiredUnit(req, res) {
     try {
         const { id } = req.params;
@@ -57,18 +44,12 @@ async function removeExpiredUnit(req, res) {
     }
 }
 
-module.exports = { getInventory, getDetailedStock, removeExpiredUnit };
-
-/**
- * GET /api/inventory/expiry-log
- * Returns the audit log of all auto-expired units (most recent first).
- */
 async function getExpiryLog(req, res) {
     try {
-        const { rows } = await require('../db').query(`
+        const { rows } = await query(`
             SELECT log_id, unit_id, blood_group,
-                   TO_CHAR(expiry_date, 'YYYY-MM-DD')        AS expiry_date,
-                   TO_CHAR(auto_expired_at, 'YYYY-MM-DD HH24:MI:SS') AS auto_expired_at,
+                   DATE_FORMAT(expiry_date,     '%Y-%m-%d')          AS expiry_date,
+                   DATE_FORMAT(auto_expired_at, '%Y-%m-%d %H:%i:%s') AS auto_expired_at,
                    trigger_source
             FROM expiry_log
             ORDER BY auto_expired_at DESC
@@ -81,22 +62,18 @@ async function getExpiryLog(req, res) {
     }
 }
 
-/**
- * GET /api/inventory/expiring-soon?days=3
- * Shows units that will expire within the next `days` days.
- */
 async function getExpiringSoon(req, res) {
     try {
         const days = parseInt(req.query.days || '3', 10);
-        const { rows } = await require('../db').query(`
+        const { rows } = await query(`
             SELECT unit_id, blood_group,
-                   TO_CHAR(donation_date, 'YYYY-MM-DD') AS donation_date,
-                   TO_CHAR(expiry_date, 'YYYY-MM-DD')   AS expiry_date,
-                   (expiry_date - CURRENT_DATE)          AS days_left
+                   DATE_FORMAT(donation_date, '%Y-%m-%d') AS donation_date,
+                   DATE_FORMAT(expiry_date,   '%Y-%m-%d') AS expiry_date,
+                   DATEDIFF(expiry_date, CURDATE())        AS days_left
             FROM blood_stock
             WHERE status = 'Available'
-              AND expiry_date >= CURRENT_DATE
-              AND expiry_date <= CURRENT_DATE + ($1 * INTERVAL '1 day')
+              AND expiry_date >= CURDATE()
+              AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
             ORDER BY expiry_date ASC
         `, [days]);
         return res.json({ expiring_soon: rows });

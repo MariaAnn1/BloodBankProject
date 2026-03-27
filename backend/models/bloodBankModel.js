@@ -1,9 +1,9 @@
 /* ═══════════════════════════════
-   BLOOD BANK MODEL
+   BLOOD BANK MODEL — MySQL Edition
    ═══════════════════════════════ */
 'use strict';
 
-const { query } = require('../db');
+const { query, getClient } = require('../db');
 
 const BloodBankModel = {
     async getInventory() {
@@ -17,57 +17,58 @@ const BloodBankModel = {
 
     async getByBloodGroup(blood_group) {
         const { rows } = await query(
-            'SELECT * FROM blood_banks WHERE blood_group = $1',
+            'SELECT * FROM blood_banks WHERE blood_group = ?',
             [blood_group]
         );
         return rows[0] || null;
     },
 
     async getBloodStock() {
-        // Fetch all available units ordered by expiry date
         const { rows } = await query(
             `SELECT unit_id, blood_group,
-                    TO_CHAR(donation_date, 'YYYY-MM-DD') AS donation_date,
-                    TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
+                    DATE_FORMAT(donation_date, '%Y-%m-%d') AS donation_date,
+                    DATE_FORMAT(expiry_date,   '%Y-%m-%d') AS expiry_date,
                     status
              FROM blood_stock
-             WHERE status = 'Available' OR status = 'Expired'
+             WHERE status IN ('Available', 'Expired')
              ORDER BY expiry_date ASC`
         );
         return rows;
     },
 
     async removeBloodUnit(unit_id) {
-        // Mark unit as expired and decrement inventory atomically under a transaction
-        const { getClient } = require('../db');
         const client = await getClient();
         try {
             await client.query('BEGIN');
 
-            // 1. Mark unit as expired (and only if currently 'Available')
+            // 1. Mark unit as Expired (only if currently Available)
             const result = await client.query(
                 `UPDATE blood_stock
                  SET status = 'Expired'
-                 WHERE unit_id = $1 AND status = 'Available'
-                 RETURNING blood_group`,
+                 WHERE unit_id = ? AND status = 'Available'`,
                 [unit_id]
             );
 
-            // If it was already Expired or Used, do nothing
             if (result.rowCount === 0) {
                 await client.query('ROLLBACK');
                 return false;
             }
 
-            const blood_group = result.rows[0].blood_group;
-
-            // 2. Decrement available_units in blood_banks schema
-            await client.query(
-                `UPDATE blood_banks
-                 SET available_units = available_units - 1
-                 WHERE blood_group = $1`,
-                [blood_group]
+            // 2. Fetch the blood group to decrement bank summary
+            const { rows } = await client.query(
+                'SELECT blood_group FROM blood_stock WHERE unit_id = ?',
+                [unit_id]
             );
+            const blood_group = rows[0]?.blood_group;
+
+            if (blood_group) {
+                await client.query(
+                    `UPDATE blood_banks
+                     SET available_units = GREATEST(0, available_units - 1)
+                     WHERE blood_group = ?`,
+                    [blood_group]
+                );
+            }
 
             await client.query('COMMIT');
             return true;

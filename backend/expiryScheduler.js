@@ -1,21 +1,11 @@
 /* ═══════════════════════════════════════════════════
-   BLOOD EXPIRY AUTO-SCHEDULER
-   Purpose: Automatically expires blood units whose
-            expiry_date has passed. Runs once at startup
-            then every day at midnight.
+   BLOOD EXPIRY AUTO-SCHEDULER — MySQL Edition
    ═══════════════════════════════════════════════════ */
 
 'use strict';
 
-const { query, getClient } = require('./db');
+const { getClient } = require('./db');
 
-/**
- * Core expiry logic (transactional):
- * 1. Find all Available units whose expiry_date < TODAY
- * 2. Mark each as 'Expired'
- * 3. Decrement blood_banks.available_units for each
- * 4. Write an entry to expiry_log for the audit trail
- */
 async function runExpiryJob() {
     const client = await getClient();
     try {
@@ -23,10 +13,11 @@ async function runExpiryJob() {
 
         // Step 1 — Find all overdue Available units
         const { rows: overdueUnits } = await client.query(`
-            SELECT unit_id, blood_group, expiry_date
+            SELECT unit_id, blood_group,
+                   DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date
             FROM blood_stock
             WHERE status = 'Available'
-              AND expiry_date < CURRENT_DATE
+              AND expiry_date < CURDATE()
         `);
 
         if (overdueUnits.length === 0) {
@@ -35,16 +26,15 @@ async function runExpiryJob() {
             return { expired: 0 };
         }
 
-        // Step 2 — Mark them all Expired in one shot
+        // Step 2 — Mark them all Expired (MySQL IN with a list)
         const unitIds = overdueUnits.map(u => u.unit_id);
+        // mysql2 expands arrays for IN(?) placeholders
         await client.query(
-            `UPDATE blood_stock
-             SET status = 'Expired'
-             WHERE unit_id = ANY($1::int[])`,
+            `UPDATE blood_stock SET status = 'Expired' WHERE unit_id IN (?)`,
             [unitIds]
         );
 
-        // Step 3 — Decrement blood_banks summary per blood group
+        // Step 3 — Decrement blood_banks per blood group
         const groupCounts = {};
         overdueUnits.forEach(u => {
             groupCounts[u.blood_group] = (groupCounts[u.blood_group] || 0) + 1;
@@ -53,27 +43,24 @@ async function runExpiryJob() {
         for (const [bg, count] of Object.entries(groupCounts)) {
             await client.query(
                 `UPDATE blood_banks
-                 SET available_units = GREATEST(0, available_units - $1)
-                 WHERE blood_group = $2`,
+                 SET available_units = GREATEST(0, available_units - ?)
+                 WHERE blood_group = ?`,
                 [count, bg]
             );
         }
 
-        // Step 4 — Write audit log entries
+        // Step 4 — Write audit log
         for (const unit of overdueUnits) {
             await client.query(
                 `INSERT INTO expiry_log (unit_id, blood_group, expiry_date, trigger_source)
-                 VALUES ($1, $2, $3, 'auto-scheduler')`,
+                 VALUES (?, ?, ?, 'auto-scheduler')`,
                 [unit.unit_id, unit.blood_group, unit.expiry_date]
             );
         }
 
         await client.query('COMMIT');
 
-        const summary = Object.entries(groupCounts)
-            .map(([bg, n]) => `${bg}:${n}`)
-            .join(', ');
-
+        const summary = Object.entries(groupCounts).map(([bg, n]) => `${bg}:${n}`).join(', ');
         console.log(`[ExpiryJob ${new Date().toISOString()}] 🗑️  Auto-expired ${overdueUnits.length} unit(s) — [${summary}]`);
         return { expired: overdueUnits.length, summary: groupCounts };
 
@@ -86,42 +73,25 @@ async function runExpiryJob() {
     }
 }
 
-/**
- * Get ms until the next midnight (server local time).
- * Adding 2 seconds buffer ensures we never fire a millisecond early.
- */
 function msUntilMidnight() {
     const now = new Date();
     const midnight = new Date(now);
-    midnight.setHours(24, 0, 2, 0); // next midnight + 2s
+    midnight.setHours(24, 0, 2, 0);
     return midnight - now;
 }
 
-/**
- * Start the scheduler:
- *  - Run immediately on startup
- *  - Then re-schedule itself to run every midnight
- */
 async function startExpiryScheduler() {
     console.log('⏰  Blood expiry scheduler started.');
+    try { await runExpiryJob(); } catch (err) { console.error('[ExpiryJob] Startup run failed:', err.message); }
 
-    // Startup pass — catch anything that expired overnight
-    try {
-        await runExpiryJob();
-    } catch (err) {
-        console.error('[ExpiryJob] Startup run failed:', err.message);
-    }
-
-    // Schedule daily at midnight
     function scheduleMidnightRun() {
         const delay = msUntilMidnight();
         console.log(`[ExpiryJob] Next run in ${Math.round(delay / 1000 / 60)} min (midnight).`);
         setTimeout(async () => {
             try { await runExpiryJob(); } catch (e) { console.error(e); }
-            scheduleMidnightRun(); // Re-schedule for following midnight
+            scheduleMidnightRun();
         }, delay);
     }
-
     scheduleMidnightRun();
 }
 

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════
-   BLOOD REQUEST MODEL
+   BLOOD REQUEST MODEL — MySQL Edition
    ═══════════════════════════════ */
 'use strict';
 
@@ -7,12 +7,15 @@ const { query, getClient } = require('../db');
 
 const RequestModel = {
     async createRequest({ blood_group, location, units_required, urgency_level, requested_by }) {
-        const { rows } = await query(
+        const result = await query(
             `INSERT INTO blood_requests
                (blood_group, location, units_required, urgency_level, requested_by)
-             VALUES ($1, $2, $3, $4, $5)
-             RETURNING *`,
+             VALUES (?, ?, ?, ?, ?)`,
             [blood_group, location, units_required, urgency_level, requested_by || null]
+        );
+        const { rows } = await query(
+            'SELECT * FROM blood_requests WHERE request_id = ?',
+            [result.rows[0]?.insertId ?? result.rows.insertId]
         );
         return rows[0];
     },
@@ -29,30 +32,20 @@ const RequestModel = {
 
     async findById(request_id) {
         const { rows } = await query(
-            'SELECT * FROM blood_requests WHERE request_id = $1',
+            'SELECT * FROM blood_requests WHERE request_id = ?',
             [request_id]
         );
         return rows[0] || null;
     },
 
-    /**
-     * Atomically approve a request:
-     *  1. Lock the blood bank row for the requested blood group.
-     *  2. Check sufficient units are available.
-     *  3. Deduct units.
-     *  4. Mark request as Completed.
-     *
-     * @param {number} request_id
-     * @returns {{ success: boolean, message: string, request?: object }}
-     */
     async approveRequest(request_id) {
         const client = await getClient();
         try {
             await client.query('BEGIN');
 
-            // Fetch the request inside the transaction
+            // Fetch request with lock
             const { rows: reqRows } = await client.query(
-                'SELECT * FROM blood_requests WHERE request_id = $1 FOR UPDATE',
+                'SELECT * FROM blood_requests WHERE request_id = ? FOR UPDATE',
                 [request_id]
             );
             const req = reqRows[0];
@@ -67,9 +60,9 @@ const RequestModel = {
                 return { success: false, message: `Request is already ${req.status}.` };
             }
 
-            // Lock the blood bank row
+            // Lock blood bank row
             const { rows: bankRows } = await client.query(
-                'SELECT * FROM blood_banks WHERE blood_group = $1 FOR UPDATE',
+                'SELECT * FROM blood_banks WHERE blood_group = ? FOR UPDATE',
                 [req.blood_group]
             );
             const bank = bankRows[0];
@@ -89,20 +82,23 @@ const RequestModel = {
 
             // Deduct stock
             await client.query(
-                'UPDATE blood_banks SET available_units = available_units - $1 WHERE blood_group = $2',
+                'UPDATE blood_banks SET available_units = available_units - ? WHERE blood_group = ?',
                 [req.units_required, req.blood_group]
             );
 
-            // Update request status
-            const { rows: updatedRows } = await client.query(
-                `UPDATE blood_requests
-                 SET status = 'Completed'
-                 WHERE request_id = $1
-                 RETURNING *`,
+            // Mark as Completed
+            await client.query(
+                `UPDATE blood_requests SET status = 'Completed' WHERE request_id = ?`,
                 [request_id]
             );
 
             await client.query('COMMIT');
+
+            // Fetch updated request to return
+            const { rows: updatedRows } = await query(
+                'SELECT * FROM blood_requests WHERE request_id = ?',
+                [request_id]
+            );
             return { success: true, message: 'Request approved and inventory updated.', request: updatedRows[0] };
 
         } catch (err) {
