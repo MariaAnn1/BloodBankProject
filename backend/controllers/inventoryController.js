@@ -58,3 +58,52 @@ async function removeExpiredUnit(req, res) {
 }
 
 module.exports = { getInventory, getDetailedStock, removeExpiredUnit };
+
+/**
+ * GET /api/inventory/expiry-log
+ * Returns the audit log of all auto-expired units (most recent first).
+ */
+async function getExpiryLog(req, res) {
+    try {
+        const { rows } = await require('../db').query(`
+            SELECT log_id, unit_id, blood_group,
+                   TO_CHAR(expiry_date, 'YYYY-MM-DD')        AS expiry_date,
+                   TO_CHAR(auto_expired_at, 'YYYY-MM-DD HH24:MI:SS') AS auto_expired_at,
+                   trigger_source
+            FROM expiry_log
+            ORDER BY auto_expired_at DESC
+            LIMIT 200
+        `);
+        return res.json({ log: rows });
+    } catch (err) {
+        console.error('getExpiryLog error:', err);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+}
+
+/**
+ * GET /api/inventory/expiring-soon?days=3
+ * Shows units that will expire within the next `days` days.
+ */
+async function getExpiringSoon(req, res) {
+    try {
+        const days = parseInt(req.query.days || '3', 10);
+        const { rows } = await require('../db').query(`
+            SELECT unit_id, blood_group,
+                   TO_CHAR(donation_date, 'YYYY-MM-DD') AS donation_date,
+                   TO_CHAR(expiry_date, 'YYYY-MM-DD')   AS expiry_date,
+                   (expiry_date - CURRENT_DATE)          AS days_left
+            FROM blood_stock
+            WHERE status = 'Available'
+              AND expiry_date >= CURRENT_DATE
+              AND expiry_date <= CURRENT_DATE + ($1 * INTERVAL '1 day')
+            ORDER BY expiry_date ASC
+        `, [days]);
+        return res.json({ expiring_soon: rows });
+    } catch (err) {
+        console.error('getExpiringSoon error:', err);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+}
+
+module.exports = { getInventory, getDetailedStock, removeExpiredUnit, getExpiryLog, getExpiringSoon };

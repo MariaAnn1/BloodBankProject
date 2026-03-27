@@ -530,10 +530,11 @@ document.querySelector('.dash-tabs')?.addEventListener('click', function (e) {
     document.getElementById('tabDonors').style.display = tab === 'donors' ? 'block' : 'none';
     document.getElementById('tabRequests').style.display = tab === 'requests' ? 'block' : 'none';
     document.getElementById('tabInventory').style.display = tab === 'inventory' ? 'block' : 'none';
+    document.getElementById('tabExpiry').style.display = tab === 'expiry' ? 'block' : 'none';
 });
 
 async function refreshAdminDashboard() {
-    await Promise.all([updateAdminStats(), renderAdminDonors(), renderAdminRequests(), renderAdminInventory()]);
+    await Promise.all([updateAdminStats(), renderAdminDonors(), renderAdminRequests(), renderAdminInventory(), renderExpirySoon(), renderExpiryLog()]);
 }
 
 async function updateAdminStats() {
@@ -685,6 +686,71 @@ window.removeBloodUnit = async function (unit_id) {
         Toast.show(`❌ ${err.message}`, 'error');
     }
 };
+
+/* ────────────────────────────────────────────
+   EXPIRY ALERTS — Expiring Soon + Audit Log
+   ──────────────────────────────────────────── */
+
+async function renderExpirySoon() {
+    const tbody = document.getElementById('expiringSoonTbody');
+    const badge = document.getElementById('expiryAlertBadge');
+    const banner = document.getElementById('expiringSoonBanner');
+    const countEl = document.getElementById('expiringSoonCount');
+    if (!tbody) return;
+    try {
+        const { expiring_soon } = await apiFetch('/inventory/expiring-soon?days=3');
+        if (!expiring_soon || expiring_soon.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">✅ No units expiring within 3 days.</td></tr>`;
+            if (badge) badge.style.display = 'none';
+            if (banner) banner.style.display = 'none';
+            return;
+        }
+        // Red badge on the Expiry Alerts tab button
+        if (badge) { badge.textContent = expiring_soon.length; badge.style.display = 'flex'; }
+        if (banner) { banner.style.display = 'block'; }
+        if (countEl) countEl.textContent = `${expiring_soon.length} unit(s) need urgent attention!`;
+
+        tbody.innerHTML = expiring_soon.map(u => {
+            const days = parseInt(u.days_left, 10);
+            const dayColor = days === 0 ? '#EF4444' : days === 1 ? '#F59E0B' : '#F0C060';
+            const dayLabel = days === 0 ? '🔴 TODAY' : days === 1 ? '🟠 Tomorrow' : `🟡 ${days} days`;
+            return `<tr>
+              <td>#${u.unit_id}</td>
+              <td><span class="blood-badge">${u.blood_group}</span></td>
+              <td>${u.donation_date}</td>
+              <td style="color:${dayColor};font-weight:bold">${u.expiry_date}</td>
+              <td style="color:${dayColor};font-weight:bold">${dayLabel}</td>
+            </tr>`;
+        }).join('');
+    } catch (err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="color:var(--crimson)">Error: ${err.message}</td></tr>`;
+    }
+}
+
+async function renderExpiryLog() {
+    const tbody = document.getElementById('expiryLogTbody');
+    if (!tbody) return;
+    try {
+        const { log } = await apiFetch('/inventory/expiry-log');
+        if (!log || log.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">No auto-removal events yet. The scheduler will populate this log when units expire.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = log.map(l => `
+          <tr>
+            <td>${l.log_id}</td>
+            <td>#${l.unit_id}</td>
+            <td><span class="blood-badge">${l.blood_group}</span></td>
+            <td style="color:var(--crimson)">${l.expiry_date}</td>
+            <td style="color:var(--text-muted);font-size:0.82rem">${l.auto_expired_at}</td>
+            <td><span style="font-size:0.78rem;padding:2px 8px;background:rgba(192,3,44,0.1);border-radius:4px;color:var(--accent)">${l.trigger_source}</span></td>
+          </tr>`).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--crimson)">Error loading log: ${err.message}</td></tr>`;
+    }
+}
+
+
 
 /* ────────────────────────────────────────────
    NAVBAR

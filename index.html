@@ -570,6 +570,11 @@
                     <button class="tab-btn active" data-tab="donors">Donors</button>
                     <button class="tab-btn" data-tab="requests">Requests</button>
                     <button class="tab-btn" data-tab="inventory">Inventory</button>
+                    <button class="tab-btn" data-tab="expiry" style="position:relative">
+                        Expiry Alerts
+                        <span id="expiryAlertBadge"
+                            style="display:none;position:absolute;top:-6px;right:-6px;background:var(--crimson);color:#fff;font-size:0.65rem;font-weight:700;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;"></span>
+                    </button>
                 </div>
                 <div class="tab-panel" id="tabDonors">
                     <div class="table-wrapper">
@@ -631,6 +636,49 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- ─── Expiry Alerts Tab ─── -->
+                <div class="tab-panel" id="tabExpiry" style="display:none">
+                    <div id="expiringSoonBanner"
+                        style="display:none;margin-bottom:1.5rem;padding:1rem 1.5rem;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.4);border-radius:var(--radius)">
+                        <strong style="color:var(--warning)">&#9888;&#xFE0F; Expiring Soon Alert —</strong>
+                        <span id="expiringSoonCount" style="color:var(--text-secondary);margin-left:0.5rem"></span>
+                    </div>
+                    <h4 style="margin-bottom:1rem;color:var(--text)">&#x1F536; Units Expiring Within 3 Days</h4>
+                    <div class="table-wrapper" style="margin-bottom:2.5rem">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Unit #</th>
+                                    <th>Blood Group</th>
+                                    <th>Donation Date</th>
+                                    <th>Expiry Date</th>
+                                    <th>Days Left</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expiringSoonTbody"></tbody>
+                        </table>
+                    </div>
+                    <h4 style="margin-bottom:0.5rem;color:var(--text)">&#x1F5D1;&#xFE0F; Auto-Removal History Log</h4>
+                    <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1rem">Units the system
+                        automatically removed from active stock after their expiry date passed.</p>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Log #</th>
+                                    <th>Unit #</th>
+                                    <th>Blood Group</th>
+                                    <th>Expiry Date</th>
+                                    <th>Auto-Removed At</th>
+                                    <th>Source</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expiryLogTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
             </div>
         </div>
     </section>

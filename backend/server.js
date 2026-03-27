@@ -11,6 +11,7 @@ const cors = require('cors');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const initDb = require('./initDb');
+const { startExpiryScheduler } = require('./expiryScheduler');
 const userRoutes = require('./routes/userRoutes');
 const donorRoutes = require('./routes/donorRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
@@ -56,6 +57,8 @@ async function start() {
             console.log(`\n🩸  LifeFlow API running on http://localhost:${PORT}`);
             console.log(`📄  Frontend: http://localhost:${PORT}`);
             console.log(`🔧  Admin demo — username: admin | password: admin123\n`);
+            // Start the blood expiry auto-scheduler after server is live
+            startExpiryScheduler();
         });
     } catch (err) {
         console.error('❌  Failed to start server:', err.message);
